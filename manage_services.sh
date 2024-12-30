@@ -3,6 +3,12 @@
 # Path to the AdGuard Home configuration file
 CONFIG_FILE="/home/ripps/AdGuardHome/AdGuardHome.yaml"
 
+# Check if yq is installed
+if ! command -v yq &> /dev/null; then
+    echo "Error: yq is not installed. Please install yq to proceed."
+    exit 1
+fi
+
 # Check if the configuration file exists
 if [ ! -f "$CONFIG_FILE" ]; then
     echo "Error: Configuration file not found at $CONFIG_FILE."
@@ -13,20 +19,17 @@ fi
 add_services() {
     echo "Adding services: $*"
     for service in "$@"; do
-        # Check if the blocked_services section exists
-        if grep -q "blocked_services:" "$CONFIG_FILE"; then
-            # Check if the service ID is already in the list
-            if ! grep -q "  - $service" "$CONFIG_FILE"; then
-                # Add the service ID to the blocked_services section under ids
-                sed -i "/blocked_services:/a \ \ \ \ ids:\n\ \ \ \ \ \ - $service" "$CONFIG_FILE"
-                echo "Added $service to blocked_services."
-            else
-                echo "$service is already in blocked_services."
-            fi
+        # Get current blocked services (as a list)
+        current_services=$(yq e '.filtering.blocked_services.ids' "$CONFIG_FILE")
+
+        # Check if the service is already in the list by searching the output
+        if echo "$current_services" | grep -q "$service"; then
+            echo "$service is already in blocked_services."
         else
-            # If blocked_services section doesn't exist, create it with the service
-            echo -e "\nfiltering:\n  blocking_ipv4: \"\"\n  blocking_ipv6: \"\"\n  blocked_services:\n    schedule:\n      time_zone: Local\n    ids:\n      - $service" >> "$CONFIG_FILE"
-            echo "Created blocked_services section and added $service."
+            echo "$service not found, adding..."
+            # Add the service to the blocked_services.ids list
+            yq e '.filtering.blocked_services.ids += ["'"$service"'"]' -i "$CONFIG_FILE"
+            echo "Added $service to blocked_services."
         fi
     done
 }
@@ -35,10 +38,14 @@ add_services() {
 remove_services() {
     echo "Removing services: $*"
     for service in "$@"; do
-        # Check if the service is in the blocked_services section
-        if grep -q "  - $service" "$CONFIG_FILE"; then
-            # Remove the service from the blocked_services section
-            sed -i "/  - $service/d" "$CONFIG_FILE"
+        # Get current blocked services (as a list)
+        current_services=$(yq e '.filtering.blocked_services.ids' "$CONFIG_FILE")
+
+        # Check if the service is in the list
+        if echo "$current_services" | grep -q "$service"; then
+            echo "$service found, removing..."
+            # Remove the service from the blocked_services.ids list
+            yq e 'del(.filtering.blocked_services.ids[] | select(. == "'"$service"'"))' -i "$CONFIG_FILE"
             echo "Removed $service from blocked_services."
         else
             echo "$service is not in blocked_services."
@@ -59,7 +66,7 @@ else
 fi
 
 # Restart the AdGuard Home service to apply the changes
-sudo systemctl restart AdGuardHome
+#sudo systemctl restart AdGuardHome
 
 # Log the action (optional)
 echo "$(date) - Performed $1 operation on services: $*" >> /var/log/adguardhome_cron.log
