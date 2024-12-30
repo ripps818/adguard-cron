@@ -66,7 +66,7 @@ else
 fi
 
 # Restart the AdGuard Home service to apply the changes
-#sudo systemctl restart AdGuardHome
+sudo systemctl restart AdGuardHome
 
 # Log the action (optional)
 echo "$(date) - Performed $1 operation on services: $*" >> /var/log/adguardhome_cron.log
